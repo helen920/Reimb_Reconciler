@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reimbursement Reconciler</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #16a34a;
+    --green-soft: #dcfce7;
+    --amber: #d97706;
+    --amber-soft: #fef3c7;
+    --red: #dc2626;
+    --red-soft: #fee2e2;
+    --gray-soft: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .card h3 { margin: 0 0 10px; font-size: 16px; }
+  .drop {
+    border: 2px dashed var(--line);
+    border-radius: 8px;
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: 0.15s;
+    background: var(--gray-soft);
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop p { margin: 0; color: var(--muted); font-size: 14px; }
+  .drop strong { color: var(--ink); }
+  .drop input { display: none; }
+  .file-info {
+    padding: 10px 12px;
+    background: var(--accent-soft);
+    border-radius: 6px;
+    margin-top: 12px;
+    font-size: 13px;
+    display: none;
+  }
+  .file-info.show { display: block; }
+  .file-info strong { display: block; }
+  .mapping { margin-top: 14px; display: none; }
+  .mapping.show { display: block; }
+  .mapping label, .config label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    margin-top: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+  .mapping select, .config input, .config select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .config { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .config { grid-template-columns: 1fr; } }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 16px;
+  }
+  button.primary:hover { background: #1d4ed8; }
+  button.primary:disabled { background: #9ca3af; cursor: not-allowed; }
+  button.secondary {
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary:hover { background: var(--gray-soft); }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    border-left: 4px solid var(--line);
+  }
+  .stat.green { border-left-color: var(--green); }
+  .stat.amber { border-left-color: var(--amber); }
+  .stat.red { border-left-color: var(--red); }
+  .stat.blue { border-left-color: var(--accent); }
+  .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .stat .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+    background: none;
+    border-left: 0; border-right: 0; border-top: 0;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab .count {
+    background: var(--gray-soft);
+    color: var(--ink);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+  .tab.active .count { background: var(--accent-soft); color: var(--accent); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+  .panel-header p { margin: 0; color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    text-align: left;
+    padding: 9px 12px;
+    background: var(--gray-soft);
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    position: sticky;
+    top: 0;
+  }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--gray-soft); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge.green { background: var(--green-soft); color: var(--green); }
+  .badge.amber { background: var(--amber-soft); color: var(--amber); }
+  .badge.red { background: var(--red-soft); color: var(--red); }
+  .badge.gray { background: var(--gray-soft); color: var(--muted); }
+  .badge.blue { background: var(--accent-soft); color: var(--accent); }
+  .table-wrap { max-height: 600px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .results { display: none; }
+  .results.show { display: block; }
+  .error {
+    background: var(--red-soft);
+    color: var(--red);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 10px;
+    display: none;
+  }
+  .error.show { display: block; }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--accent-soft);
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+    cursor: pointer;
+  }
+  .toggle input { width: 16px; height: 16px; cursor: pointer; }
+  .pivot-cell-match { background: var(--green-soft); color: var(--green); font-weight: 600; }
+  .pivot-cell-diff  { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  .pivot-cell-only  { background: var(--red-soft); color: var(--red); font-weight: 600; }
+  .pivot-table th, .pivot-table td { padding: 8px 10px; border: 1px solid var(--line); }
+  .pivot-table th { background: var(--gray-soft); font-size: 11px; text-transform: uppercase; }
+  .pivot-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pivot-table { border-collapse: collapse; }
+  .pivot-side-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 4px; }
+  .pivot-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 1000px) { .pivot-wrap { grid-template-columns: 1fr; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 14px; height: 14px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Reimbursement Reconciler</h1>
+  <p>Pivot QBO and client detail by date + category (Admin / Field), then match grouped totals to surface discrepancies.</p>
+</header>
+
+<div class="container">
+
+  <div class="grid-2">
+    <!-- QBO -->
+    <div class="card">
+      <h2>1. QBO Transaction Report</h2>
+      <div class="drop" id="dropQBO">
+        <input type="file" id="fileQBO" accept=".xlsx,.xls,.csv" />
+        <p><strong>Click to upload</strong> or drag &amp; drop<br/>Excel (.xlsx) or CSV</p>
+      </div>
+      <div class="file-info" id="infoQBO"></div>
+      <div class="mapping" id="mapQBO">
+        <label>Sheet</label>
+        <select id="sheetQBO"></select>
+        <label>Date column</label>
+        <select id="dateQBO"></select>
+        <label>Amount column</label>
+        <select id="amountQBO"></select>
+        <label>Category column (e.g. Description, Class)</label>
+        <select id="catQBO"></select>
+        <p class="hint">App auto-extracts "Field" / "Admin" from text. If your column has different categories, they'll be used as-is.</p>
+      </div>
+    </div>
+
+    <!-- Client -->
+    <div class="card">
+      <h2>2. Client Detail File</h2>
+      <div class="drop" id="dropCLI">
+        <input type="file" id="fileCLI" accept=".xlsx,.xls,.csv" />
+        <p><strong>Click to upload</strong> or drag &amp; drop<br/>Excel (.xlsx) or CSV</p>
+      </div>
+      <div class="file-info" id="infoCLI"></div>
+      <div class="mapping" id="mapCLI">
+        <label>Sheet</label>
+        <select id="sheetCLI"></select>
+        <label>Date column (e.g. Week ending)</label>
+        <select id="dateCLI"></select>
+        <label>Amount column (e.g. Total)</label>
+        <select id="amountCLI"></select>
+        <label>Category column (e.g. Column with ADMIN / FIELD)</label>
+        <select id="catCLI"></select>
+        <p class="hint">App auto-extracts "Field" / "Admin" from text. Other category values used as-is.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Match Settings</h2>
+    <div class="config">
+      <div>
+        <label>Date tolerance (days)</label>
+        <input type="number" id="dateTol" value="7" min="0" max="365" />
+        <p class="hint">Max gap allowed between QBO date and client week ending.</p>
+      </div>
+      <div>
+        <label>Amount tolerance ($)</label>
+        <input type="number" id="amtTol" value="0.05" min="0" step="0.01" />
+        <p class="hint">Differences ≤ this treated as a match (rounding).</p>
+      </div>
+      <div>
+        <label>Amount sign</label>
+        <select id="signMode">
+          <option value="abs">Match by absolute value</option>
+          <option value="strict">Strict — sign must match</option>
+        </select>
+        <p class="hint">QBO often signs reimbursements one way, client positive.</p>
+      </div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="pivotMode" checked />
+      <span>Pivot by (Date + Category) before matching  <span class="hint" style="margin-left:4px;">Recommended for reimbursement reconciliation. Uncheck to match individual lines instead.</span></span>
+    </label>
+    <button class="primary" id="runBtn" disabled>Reconcile</button>
+    <div class="error" id="errorBox"></div>
+  </div>
+
+  <div class="results" id="results">
+
+    <div class="summary" id="summary"></div>
+
+    <!-- Pivot side-by-side view -->
+    <div class="card" id="pivotCard">
+      <h2>Pivot Comparison</h2>
+      <p style="margin:0 0 14px;color:var(--muted);font-size:13px;">Side-by-side view of pivoted totals. Each QBO row is paired with the closest client row in the same category within the date tolerance.</p>
+      <div id="pivotView"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--green-soft);"></span> Matched cleanly</span>
+        <span><span class="sw" style="background:var(--amber-soft);"></span> Amount or date variance</span>
+        <span><span class="sw" style="background:var(--red-soft);"></span> Only on one side</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="matched">Matched <span class="count" id="cnt-matched">0</span></button>
+        <button class="tab" data-tab="amtDiff">Amount variance <span class="count" id="cnt-amtDiff">0</span></button>
+        <button class="tab" data-tab="dateDiff">Date variance <span class="count" id="cnt-dateDiff">0</span></button>
+        <button class="tab" data-tab="qboOnly">QBO only <span class="count" id="cnt-qboOnly">0</span></button>
+        <button class="tab" data-tab="cliOnly">Client only <span class="count" id="cnt-cliOnly">0</span></button>
+      </div>
+      <div class="panel active" id="panel-matched">
+        <div class="panel-header">
+          <p>Same category, amounts within tolerance, dates within tolerance.</p>
+          <button class="secondary" data-export="matched">Export CSV</button>
+        </div>
+        <div class="table-wrap" id="tbl-matched"></div>
+      </div>
+      <div class="panel" id="panel-amtDiff">
+        <div class="panel-header">
+          <p>Same category and date window, but amounts don't match. This is the most important bucket — likely missing or extra items between the two files.</p>
+          <button class="secondary" data-export="amtDiff">Export CSV</button>
+        </div>
+        <div class="table-wrap" id="tbl-amtDiff"></div>
+      </div>
+      <div class="panel" id="panel-dateDiff">
+        <div class="panel-header">
+          <p>Same category and amount, but dates are further apart than tolerance.</p>
+          <button class="secondary" data-export="dateDiff">Export CSV</button>
+        </div>
+        <div class="table-wrap" id="tbl-dateDiff"></div>
+      </div>
+      <div class="panel" id="panel-qboOnly">
+        <div class="panel-header">
+          <p>QBO totals with no client equivalent for the same category in the date window.</p>
+          <button class="secondary" data-export="qboOnly">Export CSV</button>
+        </div>
+        <div class="table-wrap" id="tbl-qboOnly"></div>
+      </div>
+      <div class="panel" id="panel-cliOnly">
+        <div class="panel-header">
+          <p>Client totals with no QBO equivalent for the same category in the date window.</p>
+          <button class="secondary" data-export="cliOnly">Export CSV</button>
+        </div>
+        <div class="table-wrap" id="tbl-cliOnly"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Export</h2>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:13px;">Download the full reconciliation as a single Excel workbook with summary, pivot, and one tab per category.</p>
+      <button class="secondary" id="exportAllBtn">Download full Excel report</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   STATE
+============================================================ */
+const state = {
+  qbo: { workbook: null, sheet: null, rows: [], columns: [], fileName: '' },
+  cli: { workbook: null, sheet: null, rows: [], columns: [], fileName: '' },
+  results: null
+};
+
+/* ============================================================
+   FILE UPLOAD
+============================================================ */
+function setupDrop(dropId, inputId, side) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0], side);
+  });
+  input.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0], side);
+  });
+}
+setupDrop('dropQBO', 'fileQBO', 'qbo');
+setupDrop('dropCLI', 'fileCLI', 'cli');
+
+function handleFile(file, side) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = new Uint8Array(e.target.result);
+    let workbook;
+    try {
+      workbook = XLSX.read(data, { type: 'array', cellDates: true });
+    } catch (err) {
+      showError(`Could not read ${file.name}: ${err.message}`);
+      return;
+    }
+    state[side].workbook = workbook;
+    state[side].fileName = file.name;
+    renderFileInfo(side, file.name, workbook);
+    renderSheetSelect(side);
+    loadSheet(side, workbook.SheetNames[0]);
+    updateRunBtn();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderFileInfo(side, name, wb) {
+  const info = document.getElementById(side === 'qbo' ? 'infoQBO' : 'infoCLI');
+  info.innerHTML = `<strong>${name}</strong>${wb.SheetNames.length} sheet${wb.SheetNames.length>1?'s':''}`;
+  info.classList.add('show');
+}
+
+function renderSheetSelect(side) {
+  const sel = document.getElementById(side === 'qbo' ? 'sheetQBO' : 'sheetCLI');
+  const map = document.getElementById(side === 'qbo' ? 'mapQBO' : 'mapCLI');
+  sel.innerHTML = '';
+  state[side].workbook.SheetNames.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  });
+  sel.onchange = () => loadSheet(side, sel.value);
+  map.classList.add('show');
+}
+
+function loadSheet(side, sheetName) {
+  const ws = state[side].workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
+  state[side].sheet = sheetName;
+  state[side].rows = rows;
+  state[side].columns = rows.length ? Object.keys(rows[0]) : [];
+  renderColumnMappers(side);
+}
+
+function renderColumnMappers(side) {
+  const prefix = side === 'qbo' ? 'QBO' : 'CLI';
+  const cols = state[side].columns;
+  const fields = ['date', 'amount', 'cat'];
+  fields.forEach(f => {
+    const sel = document.getElementById(f + prefix);
+    sel.innerHTML = '';
+    if (f === 'cat') {
+      const none = document.createElement('option');
+      none.value = ''; none.textContent = '— none (no category split) —';
+      sel.appendChild(none);
+    }
+    cols.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      sel.appendChild(opt);
+    });
+    const guess = guessColumn(cols, f, side);
+    if (guess) sel.value = guess;
+  });
+}
+
+function guessColumn(cols, field, side) {
+  const patterns = {
+    date:   [/week.*end/i, /^date$/i, /trans.*date/i, /post.*date/i, /payment.*date/i, /^paid/i, /date/i],
+    amount: [/^total$/i, /^amount$/i, /^amt$/i, /^sum$/i, /paid/i, /amount/i, /total/i],
+    cat:    side === 'qbo'
+      ? [/description/i, /^class$/i, /category/i, /type/i, /memo/i]
+      : [/^column$/i, /class/i, /category/i, /department/i, /group/i, /type/i]
+  };
+  for (const re of patterns[field]) {
+    const hit = cols.find(c => re.test(c));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/* ============================================================
+   PARSING
+============================================================ */
+function parseAmount(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return v;
+  let s = String(v).trim();
+  if (!s) return null;
+  let neg = false;
+  if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[$,\s]/g, '');
+  const n = parseFloat(s);
+  if (isNaN(n)) return null;
+  return neg ? -n : n;
+}
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date && !isNaN(v)) return v;
+  if (typeof v === 'number') {
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    return new Date(epoch.getTime() + v * 86400000);
+  }
+  const s = String(v).trim();
+  const d = new Date(s);
+  if (!isNaN(d)) return d;
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [_, mo, da, yr] = m;
+    yr = yr.length === 2 ? '20' + yr : yr;
+    const d2 = new Date(parseInt(yr), parseInt(mo) - 1, parseInt(da));
+    if (!isNaN(d2)) return d2;
+  }
+  return null;
+}
+function normCategory(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v).trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (lower.includes('field')) return 'Field';
+  if (lower.includes('admin')) return 'Admin';
+  return s; // pass through raw value
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+}
+function fmtAmt(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+function daysBetween(a, b) {
+  if (!a || !b) return null;
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
+}
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ============================================================
+   BUILD CLEAN ROW LIST PER SIDE
+============================================================ */
+function buildSide(side) {
+  const prefix = side === 'qbo' ? 'QBO' : 'CLI';
+  const dateCol = document.getElementById('date' + prefix).value;
+  const amtCol = document.getElementById('amount' + prefix).value;
+  const catCol = document.getElementById('cat' + prefix).value;
+  if (!dateCol || !amtCol) throw new Error(`${prefix}: pick Date and Amount columns first.`);
+  return state[side].rows.map((r, i) => ({
+    rowNum: i + 2,
+    date: parseDate(r[dateCol]),
+    amount: parseAmount(r[amtCol]),
+    rawCat: catCol ? r[catCol] : null,
+    category: catCol ? normCategory(r[catCol]) : '',
+    raw: r
+  })).filter(r => r.amount !== null && r.amount !== 0);
+}
+
+/* ============================================================
+   PIVOT: group by (date, category) -> sum amount
+============================================================ */
+function pivot(rows, signMode) {
+  const map = new Map();
+  rows.forEach(r => {
+    if (!r.date) return; // skip dateless for pivot
+    const dKey = r.date.toISOString().slice(0, 10);
+    const cKey = r.category || '(none)';
+    const key = dKey + '||' + cKey;
+    if (!map.has(key)) {
+      map.set(key, { date: r.date, category: cKey, amount: 0, count: 0, rows: [] });
+    }
+    const entry = map.get(key);
+    entry.amount += (signMode === 'abs' ? Math.abs(r.amount) : r.amount);
+    entry.count += 1;
+    entry.rows.push(r);
+  });
+  return Array.from(map.values());
+}
+
+/* ============================================================
+   MATCHING ENGINE
+============================================================ */
+function reconcile() {
+  const dateTol = parseInt(document.getElementById('dateTol').value) || 0;
+  const amtTol = parseFloat(document.getElementById('amtTol').value) || 0;
+  const signMode = document.getElementById('signMode').value;
+  const usePivot = document.getElementById('pivotMode').checked;
+
+  const qboRaw = buildSide('qbo');
+  const cliRaw = buildSide('cli');
+
+  let qboList, cliList;
+  if (usePivot) {
+    qboList = pivot(qboRaw, signMode);
+    cliList = pivot(cliRaw, signMode);
+  } else {
+    // transaction-level: each row is its own entry
+    qboList = qboRaw.map(r => ({ ...r, count: 1, rows: [r] }));
+    cliList = cliRaw.map(r => ({ ...r, count: 1, rows: [r] }));
+  }
+
+  // normalize for sign mode at this point (already done by pivot, but for tx-level need adjustment)
+  qboList.forEach(q => { q.key = signMode === 'abs' ? Math.abs(q.amount) : q.amount; });
+  cliList.forEach(c => { c.key = signMode === 'abs' ? Math.abs(c.amount) : c.amount; c.used = false; });
+
+  const matched = [];
+  const amtDiff = [];   // same cat + date window, but amount differs
+  const dateDiff = [];  // same cat + amount, but date outside window
+  const qboOnly = [];
+
+  // First pass: best match (date AND amount within tolerance, same category)
+  // Sort by amount desc to prioritize large matches first
+  qboList.sort((a, b) => (b.key || 0) - (a.key || 0));
+
+  // Pass 1: clean matches
+  qboList.forEach(q => {
+    if (q.__paired) return;
+    const cands = cliList.filter(c =>
+      !c.used &&
+      sameCat(q.category, c.category) &&
+      Math.abs((c.key || 0) - (q.key || 0)) <= amtTol &&
+      q.date && c.date && Math.abs(daysBetween(q.date, c.date)) <= dateTol
+    );
+    if (!cands.length) return;
+    // pick closest by date
+    cands.sort((a, b) => Math.abs(daysBetween(q.date, a.date)) - Math.abs(daysBetween(q.date, b.date)));
+    const c = cands[0]; c.used = true; q.__paired = true;
+    matched.push({ qbo: q, cli: c, dateDiff: Math.abs(daysBetween(q.date, c.date)), amountDiff: (q.amount - c.amount) });
+  });
+
+  // Pass 2: same cat + date window, amount differs
+  qboList.forEach(q => {
+    if (q.__paired) return;
+    const cands = cliList.filter(c =>
+      !c.used &&
+      sameCat(q.category, c.category) &&
+      q.date && c.date && Math.abs(daysBetween(q.date, c.date)) <= dateTol
+    );
+    if (!cands.length) return;
+    // pick closest by date, then by smallest amount diff
+    cands.sort((a, b) => {
+      const da = Math.abs(daysBetween(q.date, a.date));
+      const db = Math.abs(daysBetween(q.date, b.date));
+      if (da !== db) return da - db;
+      return Math.abs(a.key - q.key) - Math.abs(b.key - q.key);
+    });
+    const c = cands[0]; c.used = true; q.__paired = true;
+    amtDiff.push({ qbo: q, cli: c, dateDiff: Math.abs(daysBetween(q.date, c.date)), amountDiff: (q.amount - c.amount) });
+  });
+
+  // Pass 3: same cat + amount, date outside window
+  qboList.forEach(q => {
+    if (q.__paired) return;
+    const cands = cliList.filter(c =>
+      !c.used &&
+      sameCat(q.category, c.category) &&
+      Math.abs((c.key || 0) - (q.key || 0)) <= amtTol
+    );
+    if (!cands.length) return;
+    // pick closest by date
+    cands.sort((a, b) => Math.abs(daysBetween(q.date, a.date)) - Math.abs(daysBetween(q.date, b.date)));
+    const c = cands[0]; c.used = true; q.__paired = true;
+    dateDiff.push({ qbo: q, cli: c, dateDiff: Math.abs(daysBetween(q.date, c.date)), amountDiff: (q.amount - c.amount) });
+  });
+
+  // Whatever's left
+  qboList.forEach(q => { if (!q.__paired) qboOnly.push(q); });
+  const cliOnly = cliList.filter(c => !c.used);
+
+  // Totals
+  const sumK = arr => arr.reduce((s, x) => s + (x.amount || 0), 0);
+  const sumPairs = arr => ({
+    qbo: arr.reduce((s, p) => s + (p.qbo.amount || 0), 0),
+    cli: arr.reduce((s, p) => s + (p.cli.amount || 0), 0)
+  });
+
+  state.results = {
+    matched, amtDiff, dateDiff, qboOnly, cliOnly,
+    usePivot,
+    totals: {
+      qbo: sumK(qboList),
+      cli: sumK(cliList),
+      matched: sumPairs(matched),
+      amtDiff: sumPairs(amtDiff),
+      dateDiff: sumPairs(dateDiff),
+      qboOnly: sumK(qboOnly),
+      cliOnly: sumK(cliOnly),
+    },
+    counts: { qbo: qboList.length, cli: cliList.length }
+  };
+  renderResults();
+}
+
+function sameCat(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+function renderResults() {
+  const r = state.results;
+  document.getElementById('results').classList.add('show');
+
+  const summary = document.getElementById('summary');
+  summary.innerHTML = `
+    <div class="stat green">
+      <div class="label">Matched</div>
+      <div class="value">${r.matched.length}</div>
+      <div class="sub">${fmtAmt(r.totals.matched.qbo)}</div>
+    </div>
+    <div class="stat amber">
+      <div class="label">Amount variance</div>
+      <div class="value">${r.amtDiff.length}</div>
+      <div class="sub">Net diff: ${fmtAmt(r.totals.amtDiff.qbo - r.totals.amtDiff.cli)}</div>
+    </div>
+    <div class="stat amber">
+      <div class="label">Date variance</div>
+      <div class="value">${r.dateDiff.length}</div>
+      <div class="sub">${fmtAmt(r.totals.dateDiff.qbo)}</div>
+    </div>
+    <div class="stat red">
+      <div class="label">QBO only</div>
+      <div class="value">${r.qboOnly.length}</div>
+      <div class="sub">${fmtAmt(r.totals.qboOnly)}</div>
+    </div>
+    <div class="stat red">
+      <div class="label">Client only</div>
+      <div class="value">${r.cliOnly.length}</div>
+      <div class="sub">${fmtAmt(r.totals.cliOnly)}</div>
+    </div>
+  `;
+
+  document.getElementById('cnt-matched').textContent = r.matched.length;
+  document.getElementById('cnt-amtDiff').textContent = r.amtDiff.length;
+  document.getElementById('cnt-dateDiff').textContent = r.dateDiff.length;
+  document.getElementById('cnt-qboOnly').textContent = r.qboOnly.length;
+  document.getElementById('cnt-cliOnly').textContent = r.cliOnly.length;
+
+  renderPivotView(r);
+  renderPairedTable('tbl-matched', r.matched, 'green');
+  renderPairedTable('tbl-amtDiff', r.amtDiff, 'amber');
+  renderPairedTable('tbl-dateDiff', r.dateDiff, 'amber');
+  renderSingleTable('tbl-qboOnly', r.qboOnly, 'red', 'QBO');
+  renderSingleTable('tbl-cliOnly', r.cliOnly, 'red', 'Client');
+}
+
+function renderPivotView(r) {
+  // Build a unified pivot: gather all paired and unpaired rows, present in date order
+  // Each row in the view: date, category, QBO amt, Cli amt, date diff, amt diff, status
+  const rows = [];
+  r.matched.forEach(p => rows.push({ kind: 'match', ...p }));
+  r.amtDiff.forEach(p => rows.push({ kind: 'amt', ...p }));
+  r.dateDiff.forEach(p => rows.push({ kind: 'date', ...p }));
+  r.qboOnly.forEach(q => rows.push({ kind: 'qbo', qbo: q, cli: null }));
+  r.cliOnly.forEach(c => rows.push({ kind: 'cli', qbo: null, cli: c }));
+  rows.sort((a, b) => {
+    const ad = a.qbo ? a.qbo.date : a.cli.date;
+    const bd = b.qbo ? b.qbo.date : b.cli.date;
+    if (ad && bd) return ad - bd;
+    return 0;
+  });
+  let html = `<div class="table-wrap"><table class="pivot-table" style="width:100%;">
+    <thead><tr>
+      <th>QBO Date</th><th>Category</th><th class="num">QBO $</th>
+      <th>Client Date</th><th>Category</th><th class="num">Client $</th>
+      <th class="num">Difference</th><th>Status</th>
+    </tr></thead><tbody>`;
+  rows.forEach(row => {
+    const q = row.qbo, c = row.cli;
+    let cellQ = 'pivot-cell-only', cellC = 'pivot-cell-only', status = '';
+    let diffTxt = '-';
+    if (row.kind === 'match') {
+      cellQ = cellC = 'pivot-cell-match';
+      status = '<span class="badge green">Match</span>';
+    } else if (row.kind === 'amt') {
+      cellQ = cellC = 'pivot-cell-diff';
+      status = '<span class="badge amber">Mismatch</span>';
+      diffTxt = fmtAmt(q.amount - c.amount);
+    } else if (row.kind === 'date') {
+      cellQ = cellC = 'pivot-cell-diff';
+      status = '<span class="badge amber">Date var</span>';
+    } else if (row.kind === 'qbo') {
+      status = '<span class="badge red">QBO only</span>';
+      diffTxt = fmtAmt(q.amount);
+    } else if (row.kind === 'cli') {
+      status = '<span class="badge red">Cli only</span>';
+      diffTxt = fmtAmt(-c.amount);
+    }
+    html += `<tr>
+      <td>${q ? fmtDate(q.date) : ''}</td>
+      <td>${q ? escapeHtml(q.category) : ''}</td>
+      <td class="num ${q ? cellQ : ''}">${q ? fmtAmt(q.amount) : ''}</td>
+      <td>${c ? fmtDate(c.date) : ''}</td>
+      <td>${c ? escapeHtml(c.category) : ''}</td>
+      <td class="num ${c ? cellC : ''}">${c ? fmtAmt(c.amount) : ''}</td>
+      <td class="num">${diffTxt}</td>
+      <td>${status}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('pivotView').innerHTML = html;
+}
+
+function renderPairedTable(id, pairs, badgeClass) {
+  const el = document.getElementById(id);
+  if (!pairs.length) { el.innerHTML = `<div class="empty">No items in this category.</div>`; return; }
+  let html = `<table><thead><tr>
+    <th>QBO Date</th><th>Category</th><th class="num">QBO Amount</th><th>QBO Count</th>
+    <th>Client Date</th><th>Category</th><th class="num">Client Amount</th><th>Cli Count</th>
+    <th class="num">Δ $</th><th class="num">Δ days</th>
+  </tr></thead><tbody>`;
+  pairs.forEach(p => {
+    const dd = p.dateDiff;
+    const ad = p.amountDiff;
+    html += `<tr>
+      <td>${fmtDate(p.qbo.date)}</td>
+      <td>${escapeHtml(p.qbo.category)}</td>
+      <td class="num">${fmtAmt(p.qbo.amount)}</td>
+      <td>${p.qbo.count || 1}</td>
+      <td>${fmtDate(p.cli.date)}</td>
+      <td>${escapeHtml(p.cli.category)}</td>
+      <td class="num">${fmtAmt(p.cli.amount)}</td>
+      <td>${p.cli.count || 1}</td>
+      <td class="num"><span class="badge ${Math.abs(ad) < 0.05 ? 'green' : badgeClass}">${fmtAmt(ad)}</span></td>
+      <td class="num"><span class="badge ${dd <= 7 ? 'green' : badgeClass}">${dd}d</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderSingleTable(id, rows, badgeClass, side) {
+  const el = document.getElementById(id);
+  if (!rows.length) { el.innerHTML = `<div class="empty">No items in this category.</div>`; return; }
+  let html = `<table><thead><tr>
+    <th>Date</th><th>Category</th><th class="num">Amount</th><th>Lines</th><th>Flag</th>
+  </tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr>
+      <td>${fmtDate(r.date)}</td>
+      <td>${escapeHtml(r.category)}</td>
+      <td class="num">${fmtAmt(r.amount)}</td>
+      <td>${r.count || 1}</td>
+      <td><span class="badge ${badgeClass}">${side} only</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+/* ============================================================
+   TABS
+============================================================ */
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+/* ============================================================
+   EXPORT
+============================================================ */
+document.querySelectorAll('[data-export]').forEach(btn => {
+  btn.addEventListener('click', () => exportCategoryCSV(btn.dataset.export));
+});
+
+function exportCategoryCSV(cat) {
+  if (!state.results) return;
+  const r = state.results;
+  let rows;
+  if (cat === 'qboOnly' || cat === 'cliOnly') {
+    rows = r[cat].map(x => ({
+      'Date': x.date ? x.date.toISOString().slice(0, 10) : '',
+      'Category': x.category,
+      'Amount': x.amount,
+      'Source Lines': x.count || 1
+    }));
+  } else {
+    rows = r[cat].map(p => ({
+      'QBO Date': p.qbo.date ? p.qbo.date.toISOString().slice(0, 10) : '',
+      'Category': p.qbo.category,
+      'QBO Amount': p.qbo.amount,
+      'QBO Lines': p.qbo.count || 1,
+      'Client Date': p.cli.date ? p.cli.date.toISOString().slice(0, 10) : '',
+      'Client Amount': p.cli.amount,
+      'Client Lines': p.cli.count || 1,
+      'Amount Diff (QBO-Cli)': p.amountDiff,
+      'Date Diff (days)': p.dateDiff
+    }));
+  }
+  if (!rows.length) { alert('Nothing to export in this category.'); return; }
+  const csv = Papa.unparse(rows);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  triggerDownload(blob, `reconciliation_${cat}_${dateStamp()}.csv`);
+}
+
+document.getElementById('exportAllBtn').addEventListener('click', exportFullExcel);
+
+function exportFullExcel() {
+  if (!state.results) return;
+  const r = state.results;
+  const wb = XLSX.utils.book_new();
+
+  // Summary sheet
+  const sumRows = [
+    ['Reimbursement Reconciliation Report'],
+    ['Generated', new Date().toLocaleString()],
+    ['Mode', r.usePivot ? 'Pivot by (Date + Category)' : 'Transaction-level'],
+    [],
+    ['Category', 'Count', 'QBO Total', 'Client Total', 'Net Diff'],
+    ['Matched', r.matched.length, r.totals.matched.qbo, r.totals.matched.cli, r.totals.matched.qbo - r.totals.matched.cli],
+    ['Amount variance', r.amtDiff.length, r.totals.amtDiff.qbo, r.totals.amtDiff.cli, r.totals.amtDiff.qbo - r.totals.amtDiff.cli],
+    ['Date variance', r.dateDiff.length, r.totals.dateDiff.qbo, r.totals.dateDiff.cli, r.totals.dateDiff.qbo - r.totals.dateDiff.cli],
+    ['QBO only', r.qboOnly.length, r.totals.qboOnly, 0, r.totals.qboOnly],
+    ['Client only', r.cliOnly.length, 0, r.totals.cliOnly, -r.totals.cliOnly],
+    [],
+    ['Grand totals', '', r.totals.qbo, r.totals.cli, r.totals.qbo - r.totals.cli]
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumRows), 'Summary');
+
+  // Pivot comparison sheet (the side-by-side view)
+  const pivotRows = [];
+  r.matched.forEach(p => pivotRows.push(pairToPivotRow(p, 'Matched')));
+  r.amtDiff.forEach(p => pivotRows.push(pairToPivotRow(p, 'Amount variance')));
+  r.dateDiff.forEach(p => pivotRows.push(pairToPivotRow(p, 'Date variance')));
+  r.qboOnly.forEach(q => pivotRows.push({
+    'QBO Date': q.date ? q.date.toISOString().slice(0, 10) : '',
+    'Category': q.category, 'QBO Amount': q.amount, 'QBO Lines': q.count || 1,
+    'Client Date': '', 'Client Amount': '', 'Client Lines': '', 'Amount Diff': q.amount, 'Date Diff (days)': '', 'Status': 'QBO only'
+  }));
+  r.cliOnly.forEach(c => pivotRows.push({
+    'QBO Date': '', 'Category': c.category, 'QBO Amount': '', 'QBO Lines': '',
+    'Client Date': c.date ? c.date.toISOString().slice(0, 10) : '',
+    'Client Amount': c.amount, 'Client Lines': c.count || 1, 'Amount Diff': -c.amount, 'Date Diff (days)': '', 'Status': 'Client only'
+  }));
+  pivotRows.sort((a, b) => {
+    const ad = a['QBO Date'] || a['Client Date'];
+    const bd = b['QBO Date'] || b['Client Date'];
+    return ad.localeCompare(bd);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pivotRows), 'Pivot Comparison');
+
+  const pairToObj = p => ({
+    'QBO Date': p.qbo.date ? p.qbo.date.toISOString().slice(0, 10) : '',
+    'Category': p.qbo.category,
+    'QBO Amount': p.qbo.amount,
+    'QBO Lines': p.qbo.count || 1,
+    'Client Date': p.cli.date ? p.cli.date.toISOString().slice(0, 10) : '',
+    'Client Amount': p.cli.amount,
+    'Client Lines': p.cli.count || 1,
+    'Amount Diff (QBO-Cli)': p.amountDiff,
+    'Date Diff (days)': p.dateDiff
+  });
+  const singleToObj = x => ({
+    'Date': x.date ? x.date.toISOString().slice(0, 10) : '',
+    'Category': x.category,
+    'Amount': x.amount,
+    'Source Lines': x.count || 1
+  });
+
+  if (r.matched.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r.matched.map(pairToObj)),  'Matched');
+  if (r.amtDiff.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r.amtDiff.map(pairToObj)),  'Amount Variance');
+  if (r.dateDiff.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r.dateDiff.map(pairToObj)), 'Date Variance');
+  if (r.qboOnly.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r.qboOnly.map(singleToObj)), 'QBO Only');
+  if (r.cliOnly.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(r.cliOnly.map(singleToObj)), 'Client Only');
+
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([out], { type: 'application/octet-stream' });
+  triggerDownload(blob, `reimbursement_reconciliation_${dateStamp()}.xlsx`);
+}
+
+function pairToPivotRow(p, status) {
+  return {
+    'QBO Date': p.qbo.date ? p.qbo.date.toISOString().slice(0, 10) : '',
+    'Category': p.qbo.category,
+    'QBO Amount': p.qbo.amount,
+    'QBO Lines': p.qbo.count || 1,
+    'Client Date': p.cli.date ? p.cli.date.toISOString().slice(0, 10) : '',
+    'Client Amount': p.cli.amount,
+    'Client Lines': p.cli.count || 1,
+    'Amount Diff': p.amountDiff,
+    'Date Diff (days)': p.dateDiff,
+    'Status': status
+  };
+}
+
+function dateStamp() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   ENABLE BUTTON / ERROR HANDLING
+============================================================ */
+function updateRunBtn() {
+  const ready = state.qbo.workbook && state.cli.workbook;
+  document.getElementById('runBtn').disabled = !ready;
+}
+function showError(msg) {
+  const e = document.getElementById('errorBox');
+  e.textContent = msg;
+  e.classList.add('show');
+  setTimeout(() => e.classList.remove('show'), 8000);
+}
+
+document.getElementById('runBtn').addEventListener('click', () => {
+  try {
+    document.getElementById('errorBox').classList.remove('show');
+    reconcile();
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    showError(err.message);
+    console.error(err);
+  }
+});
+</script>
+
+</body>
+</html>
